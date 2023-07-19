@@ -1,12 +1,8 @@
 {
-  "compilerOptions": {
-    "allowJs": true,
-    "esModuleInterop": true,
-    "isolatedModules": true,
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "outDir": "dist",
-    "paths": { "~/*": ["./src/*"] },
-    "target": "ESNext"
-  }
+	"compilerOptions": {
+		"esModuleInterop": true,
+		"isolatedModules": true,
+		"outDir": "dist",
+		"paths": { "~/*": ["./src/*"] }
+	}
 }

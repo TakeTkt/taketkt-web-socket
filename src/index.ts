@@ -2,8 +2,8 @@ import DotEnv from 'dotenv';
 DotEnv.config();
 import { Pool } from 'pg';
 import { WebSocketServer } from 'ws';
-import { heartbeat, keepAlive } from './utils/keepalive.js';
-import { Socket } from './utils/state.js';
+import { heartbeat, keepAlive } from './utils/keepalive';
+import { Socket } from './utils/state';
 
 const pool = new Pool({
 	database: process.env.DATABASE!,
