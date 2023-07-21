@@ -21,11 +21,11 @@ pnpm dev
 - With **no** installation
 
 ```sh
-pnpm dlx wscat -c wss://localhost:8000
+pnpm dlx wscat -c ws://localhost:8000
 ```
 
 - After installation
 
 ```sh
-wscat -c wss://localhost:8000
+wscat -c ws://localhost:8000
 ```
