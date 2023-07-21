@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { WebSocketServer } from 'ws';
 import { heartbeat, keepAlive } from './utils/keepalive';
 import { Socket } from './utils/state';
+import { authorized } from './utils/auth';
 
 const pool = new Pool({
 	database: process.env.DATABASE!,
@@ -15,30 +16,41 @@ const pool = new Pool({
 
 const wss = new WebSocketServer({ port: Number(process.env.PORT) });
 
+console.log(`Server listening on port ${process.env.PORT}`);
+
 wss.on('connection', (ws: Socket) => {
 	console.log('WebSocket client connected');
 
-	ws.on('message', function message(data) {
-		console.log('received: %s', data);
-		const query = `LISTEN table_update;`;
+	// * Start Listening:
+	ws.on('message', async (data) => {
+		try {
+			const { query, params, token } = JSON.parse(`${data ?? {}}`);
 
-		pool.connect((err, client, release) => {
-			if (err) {
-				console.error('Error acquiring client', err.stack);
-				return;
+			// if (!(await authorized(token))) {
+			// 	ws.close();
+			// 	return;
+			// }
+
+			if (query) {
+				const client = await pool.connect();
+				await client.query(query);
+
+				console.log(`Listening to table query: ${query}`);
+
+				// Send the result of the query back to the client
+				client.on('notification', (notification) => {
+					ws.send(notification.payload);
+				});
 			}
-			// Run Query:
-			client.query(query, (err, result) => {
-				if (err) {
-					console.error('Error executing query', err.stack);
-					return;
-				}
-				console.log('Listening for table updates...');
-			});
-		});
+		} catch (e) {
+			console.error('Error parsing message:', e.message);
+		}
 	});
 
+	// * Keep Alive:
 	ws.on('pong', heartbeat);
+
+	// * Close:
 	ws.on('close', () => ws.send('closed'));
 });
 
