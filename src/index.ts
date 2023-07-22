@@ -50,7 +50,7 @@ wss.on('connection', async (ws: Socket, req) => {
 					values: params,
 				};
 				if (condition) {
-					queryOptions.text += ` WHERE ${condition}`;
+					queryOptions.text += ` ${condition}`;
 				}
 				const { rows } = await pool.query(queryOptions);
 				const newTickets = rows.map((row) => parseJson<Ticket>(row.data));
