@@ -7,21 +7,27 @@
 1. Install deps using:
 
 ```sh
-pnpm i
+yarn
 ```
 
 2. Run dev server:
 
 ```sh
-pnpm dev
+yarn dev
 ```
 
 3. Connect using a WebSocket terminal client ([`wscat` recommended](https://github.com/websockets/wscat)):
 
-- With **no** installation
+- Install wscat first
 
 ```sh
-pnpm dlx wscat -c ws://localhost:8000
+npm install -g wscat
+```
+
+or
+
+```sh
+yarn global add wscat
 ```
 
 - After installation

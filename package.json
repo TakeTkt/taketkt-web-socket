@@ -1,12 +1,12 @@
 {
-	"name": "plot",
+	"name": "taketkt-websocket",
 	"version": "1.0.0",
-	"author": "dayblox",
+	"author": "taketkt",
 	"description": "WebSocket server",
+	"license": "MIT",
 	"main": "dist/index.js",
 	"engines": {
-		"node": ">=18.11",
-		"pnpm": ">=7.27"
+		"node": ">=16"
 	},
 	"scripts": {
 		"dev": "nodemon ./src/index.ts",
@@ -16,11 +16,15 @@
 	"dependencies": {
 		"dotenv": "^16.3.1",
 		"esbuild": "^0.17.16",
+		"lodash.clonedeep": "^4.5.0",
 		"node-fetch": "2.6.1",
 		"pg": "^8.11.1",
+		"pg-listen": "^1.7.0",
+		"taketkt": "^1.2.5",
 		"ws": "^8.13.0"
 	},
 	"devDependencies": {
+		"@types/lodash.clonedeep": "^4.5.7",
 		"@types/node": "^18.15.11",
 		"@types/node-fetch": "^2.6.4",
 		"@types/pg": "^8.10.2",

@@ -1,19 +1,33 @@
+// # DotEnv:
 import DotEnv from 'dotenv';
 DotEnv.config();
+// # Imports:
+import cloneDeep from 'lodash.clonedeep';
 import { Pool } from 'pg';
-import { WebSocketServer } from 'ws';
+import createPostgresSubscriber from 'pg-listen';
+import type { Reservation, Waiting } from 'taketkt';
+import { WebSocket, WebSocketServer } from 'ws';
 import { heartbeat, keepAlive } from './utils/keepalive';
-import { Socket } from './utils/state';
-import { authorized } from './utils/auth';
 
-const pool = new Pool({
+type Socket = WebSocket & { isAlive: boolean };
+type Ticket = Waiting & Reservation;
+type InitData = {
+	table?: 'waitings' | 'reservations';
+	condition?: string;
+	params?: any[];
+	token?: string;
+};
+
+const dbConfig = {
 	database: process.env.DATABASE!,
 	user: process.env.DB_USER!,
 	host: process.env.DB_HOST!,
 	password: process.env.DB_PASSWORD!,
 	port: Number(process.env.DB_PORT ?? 6316),
-});
+};
 
+const pool = new Pool(dbConfig);
+const subscriber = createPostgresSubscriber(dbConfig);
 const wss = new WebSocketServer({ port: Number(process.env.PORT) });
 
 console.log(`Server listening on port ${process.env.PORT}`);
@@ -23,7 +37,7 @@ wss.on('connection', (ws: Socket) => {
 
 	// * Start Listening:
 	ws.on('message', async (data) => {
-		const { table, condition, token } = JSON.parse(`${data ?? {}}`);
+		const { table, condition, params = [], token } = JSON.parse(`${data ?? {}}`) as InitData;
 
 		// if (!(await authorized(token))) {
 		// 	ws.close(1014, 'Not authorized');
@@ -40,23 +54,41 @@ wss.on('connection', (ws: Socket) => {
 			selectQuery += ` WHERE ${condition}`;
 		}
 
+		let tickets: Ticket[] = [];
+
 		const sendQueryData = async () => {
-			const _client = await pool.connect();
-			const { rows } = await _client.query(selectQuery);
-			ws.send(JSON.stringify(rows));
-			_client.release();
+			try {
+				const { rows } = await pool.query(selectQuery, params);
+				const _tickets = rows.map((row) => JSON.parse(row.data) as Ticket);
+				if (detectChange(tickets, _tickets)) {
+					tickets = cloneDeep(_tickets);
+					ws.send(JSON.stringify(_tickets));
+				}
+			} catch (error) {
+				ws.close(1011, 'Error in initial query: ' + error.message ?? 'Unknown error');
+				return;
+			}
 		};
 
-		const client = await pool.connect();
-		let listenQuery = table === 'waitings' ? 'LISTEN waitings_realtime' : 'LISTEN reservations_realtime';
-		client.query(listenQuery);
-
-		client.on('notification', async () => {
-			console.log('Notification received');
-			sendQueryData();
-		});
+		const listener = async () => {
+			try {
+				await subscriber.connect();
+				subscriber.listenTo(table + '_realtime');
+				subscriber.events.on('error', (error) => {
+					console.log('Error in listener even:', error.message);
+				});
+				subscriber.events.on('notification', async (data) => {
+					sendQueryData();
+				});
+			} catch (error) {
+				ws.close(1011, '[Error @ listener()]: ' + error.message ?? 'Unknown error');
+				subscriber.close();
+				return;
+			}
+		};
 
 		sendQueryData();
+		listener();
 	});
 
 	// * Keep Alive:
@@ -64,8 +96,9 @@ wss.on('connection', (ws: Socket) => {
 
 	// * Close:
 	ws.on('close', () => {
+		subscriber.close();
 		pool.end();
-		ws.send('closed');
+		ws.close(1000, 'WebSocket client disconnected');
 	});
 });
 
