@@ -5,19 +5,11 @@ DotEnv.config();
 import cloneDeep from 'lodash.clonedeep';
 import { Pool } from 'pg';
 import createPostgresSubscriber from 'pg-listen';
-import type { Reservation, Waiting } from 'taketkt';
-import { WebSocket, WebSocketServer } from 'ws';
+import { WebSocketServer } from 'ws';
+import { detectChange, parseJson } from './utils';
+import { authorized } from './utils/auth';
 import { heartbeat, keepAlive } from './utils/keepalive';
-import { authorized } from '~/utils/auth';
-
-type Socket = WebSocket & { isAlive: boolean };
-type Ticket = Waiting & Reservation;
-type InitData = {
-	table?: 'waitings' | 'reservations';
-	condition?: string;
-	params?: any[];
-	token?: string;
-};
+import { InitData, Socket, Ticket } from './utils/types';
 
 const dbConfig = {
 	database: process.env.DATABASE!,
@@ -31,8 +23,6 @@ const pool = new Pool(dbConfig);
 const subscriber = createPostgresSubscriber(dbConfig);
 const wss = new WebSocketServer({ port: Number(process.env.PORT) });
 
-console.log(`Server listening on port ${process.env.PORT}`);
-
 wss.on('connection', async (ws: Socket, req) => {
 	// ? Check if authorized:
 	const url = new URL(req.url!, `http://${req.headers.host}`);
@@ -44,7 +34,7 @@ wss.on('connection', async (ws: Socket, req) => {
 
 	// * Start Listening:
 	ws.on('message', (data) => {
-		const { table, condition, params = [] } = JSON.parse(`${data ?? {}}`) as InitData;
+		const { table, condition, params = [] } = parseJson<InitData>(data, {});
 
 		if (table !== 'waitings' && table !== 'reservations') {
 			ws.close(1014, 'Invalid table name');
@@ -63,7 +53,7 @@ wss.on('connection', async (ws: Socket, req) => {
 					queryOptions.text += ` WHERE ${condition}`;
 				}
 				const { rows } = await pool.query(queryOptions);
-				const newTickets = rows.map((row) => JSON.parse(row.data) as Ticket);
+				const newTickets = rows.map((row) => parseJson<Ticket>(row.data));
 				if (!oldTickets.length || detectChange(oldTickets, newTickets)) {
 					oldTickets = cloneDeep(newTickets);
 					ws.send(JSON.stringify(newTickets));
@@ -82,7 +72,7 @@ wss.on('connection', async (ws: Socket, req) => {
 					console.log('Error in listener even:', error.message);
 				});
 				subscriber.events.on('notification', async (data) => {
-					// const ticket = data?.payload?.data ? (JSON.parse(data?.payload?.data) as Ticket) : null;
+					// const ticket = parseJson<Ticket>(data.payload);
 					sendQueryData();
 				});
 			} catch (error) {
@@ -109,3 +99,5 @@ wss.on('connection', async (ws: Socket, req) => {
 
 const interval = keepAlive(wss);
 wss.on('close', () => clearInterval(interval));
+
+console.log(`Server listening on port ${process.env.PORT}`);

@@ -1,4 +1,6 @@
-function detectChange<T extends object>(oldArr: T[], newArr: T[]): boolean {
+import { jsonParse } from 'taketkt/lib';
+
+export function detectChange<T extends object>(oldArr: T[], newArr: T[]): boolean {
 	if (oldArr.length !== newArr.length) {
 		return true;
 	}
@@ -11,4 +13,13 @@ function detectChange<T extends object>(oldArr: T[], newArr: T[]): boolean {
 		}
 	}
 	return false;
+}
+
+export function parseJson<T>(data: any, initState?: T): T {
+	try {
+		const result = jsonParse<T>(data);
+		return result ?? initState;
+	} catch (error) {
+		return null;
+	}
 }
