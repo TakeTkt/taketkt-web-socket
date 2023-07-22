@@ -8,6 +8,7 @@ import createPostgresSubscriber from 'pg-listen';
 import type { Reservation, Waiting } from 'taketkt';
 import { WebSocket, WebSocketServer } from 'ws';
 import { heartbeat, keepAlive } from './utils/keepalive';
+import { authorized } from '~/utils/auth';
 
 type Socket = WebSocket & { isAlive: boolean };
 type Ticket = Waiting & Reservation;
@@ -32,37 +33,40 @@ const wss = new WebSocketServer({ port: Number(process.env.PORT) });
 
 console.log(`Server listening on port ${process.env.PORT}`);
 
-wss.on('connection', (ws: Socket) => {
-	console.log('WebSocket client connected');
+wss.on('connection', async (ws: Socket, req) => {
+	// ? Check if authorized:
+	const url = new URL(req.url!, `http://${req.headers.host}`);
+	const token = url.searchParams.get('token');
+	if (!(await authorized(token))) {
+		ws.close(1008, 'Not Unauthorized');
+		return;
+	}
 
 	// * Start Listening:
-	ws.on('message', async (data) => {
-		const { table, condition, params = [], token } = JSON.parse(`${data ?? {}}`) as InitData;
-
-		// if (!(await authorized(token))) {
-		// 	ws.close(1014, 'Not authorized');
-		// 	return;
-		// }
+	ws.on('message', (data) => {
+		const { table, condition, params = [] } = JSON.parse(`${data ?? {}}`) as InitData;
 
 		if (table !== 'waitings' && table !== 'reservations') {
 			ws.close(1014, 'Invalid table name');
 			return;
 		}
 
-		let selectQuery = `SELECT data FROM ${table}`;
-		if (condition) {
-			selectQuery += ` WHERE ${condition}`;
-		}
-
-		let tickets: Ticket[] = [];
+		let oldTickets: Ticket[] = [];
 
 		const sendQueryData = async () => {
 			try {
-				const { rows } = await pool.query(selectQuery, params);
-				const _tickets = rows.map((row) => JSON.parse(row.data) as Ticket);
-				if (detectChange(tickets, _tickets)) {
-					tickets = cloneDeep(_tickets);
-					ws.send(JSON.stringify(_tickets));
+				let queryOptions: { text: string; values: any[] } = {
+					text: `SELECT data FROM ${table}`,
+					values: params,
+				};
+				if (condition) {
+					queryOptions.text += ` WHERE ${condition}`;
+				}
+				const { rows } = await pool.query(queryOptions);
+				const newTickets = rows.map((row) => JSON.parse(row.data) as Ticket);
+				if (!oldTickets.length || detectChange(oldTickets, newTickets)) {
+					oldTickets = cloneDeep(newTickets);
+					ws.send(JSON.stringify(newTickets));
 				}
 			} catch (error) {
 				ws.close(1011, 'Error in initial query: ' + error.message ?? 'Unknown error');
@@ -78,6 +82,7 @@ wss.on('connection', (ws: Socket) => {
 					console.log('Error in listener even:', error.message);
 				});
 				subscriber.events.on('notification', async (data) => {
+					// const ticket = data?.payload?.data ? (JSON.parse(data?.payload?.data) as Ticket) : null;
 					sendQueryData();
 				});
 			} catch (error) {
