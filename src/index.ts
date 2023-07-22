@@ -23,35 +23,50 @@ wss.on('connection', (ws: Socket) => {
 
 	// * Start Listening:
 	ws.on('message', async (data) => {
-		try {
-			const { query, params, token } = JSON.parse(`${data ?? {}}`);
+		const { table, condition, token } = JSON.parse(`${data ?? {}}`);
 
-			// if (!(await authorized(token))) {
-			// 	ws.close();
-			// 	return;
-			// }
+		// if (!(await authorized(token))) {
+		// 	ws.close(1014, 'Not authorized');
+		// 	return;
+		// }
 
-			if (query) {
-				const client = await pool.connect();
-				await client.query(query);
-
-				console.log(`Listening to table query: ${query}`);
-
-				// Send the result of the query back to the client
-				client.on('notification', (notification) => {
-					ws.send(notification.payload);
-				});
-			}
-		} catch (e) {
-			console.error('Error parsing message:', e.message);
+		if (table !== 'waitings' && table !== 'reservations') {
+			ws.close(1014, 'Invalid table name');
+			return;
 		}
+
+		let selectQuery = `SELECT data FROM ${table}`;
+		if (condition) {
+			selectQuery += ` WHERE ${condition}`;
+		}
+
+		const sendQueryData = async () => {
+			const _client = await pool.connect();
+			const { rows } = await _client.query(selectQuery);
+			ws.send(JSON.stringify(rows));
+			_client.release();
+		};
+
+		const client = await pool.connect();
+		let listenQuery = table ? 'LISTEN waitings_realtime' : 'LISTEN reservations_realtime';
+		client.query(listenQuery);
+
+		client.on('notification', async () => {
+			console.log('Notification received');
+			sendQueryData();
+		});
+
+		sendQueryData();
 	});
 
 	// * Keep Alive:
 	ws.on('pong', heartbeat);
 
 	// * Close:
-	ws.on('close', () => ws.send('closed'));
+	ws.on('close', () => {
+		pool.end();
+		ws.send('closed');
+	});
 });
 
 const interval = keepAlive(wss);
