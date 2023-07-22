@@ -1,4 +1,4 @@
-import { Socket } from './state';
+import { Socket } from './types';
 import { WebSocketServer } from 'ws';
 
 export const keepAlive = (wss: WebSocketServer) =>
