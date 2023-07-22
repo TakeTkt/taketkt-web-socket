@@ -48,7 +48,7 @@ wss.on('connection', (ws: Socket) => {
 		};
 
 		const client = await pool.connect();
-		let listenQuery = table ? 'LISTEN waitings_realtime' : 'LISTEN reservations_realtime';
+		let listenQuery = table === 'waitings' ? 'LISTEN waitings_realtime' : 'LISTEN reservations_realtime';
 		client.query(listenQuery);
 
 		client.on('notification', async () => {
