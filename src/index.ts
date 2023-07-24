@@ -80,8 +80,9 @@ wss.on('connection', async (ws: Socket, req) => {
 			const listener = async () => {
 				try {
 					// Check if subscriber is not connected:
-					if (!subscriber.getSubscribedChannels().length) return;
-					await subscriber.connect();
+					if (!subscriber.getSubscribedChannels().length) {
+						await subscriber.connect();
+					}
 					subscriber.listenTo(table + '_realtime');
 					subscriber.events.on('error', (error) => {
 						console.log('Error in listener even:', error.message);
@@ -112,7 +113,7 @@ wss.on('connection', async (ws: Socket, req) => {
 	ws.on('close', () => {
 		try {
 			subscriber.close();
-			ws.close(1000, 'WebSocket client disconnected');
+			// ws.close(1000, 'WebSocket client disconnected');
 		} catch (error) {
 			console.log('Error in ws.on(close):', error.message);
 		}
