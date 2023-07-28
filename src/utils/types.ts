@@ -6,7 +6,7 @@ export type Socket = WebSocket & { isAlive: boolean };
 export type Ticket = Waiting & Reservation;
 
 export type InitData = {
-	table?: 'waitings' | 'reservations';
+	table?: 'waitings' | 'reservations' | 'waitings, reservations';
 	condition?: string;
 	params?: any[];
 	token?: string;

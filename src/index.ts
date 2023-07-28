@@ -20,13 +20,15 @@ const dbConfig = {
 };
 
 const pool = new Pool(dbConfig);
-const subscriber = createPostgresSubscriber(dbConfig);
 const wss = new WebSocketServer({ port: Number(process.env.PORT) });
 
 wss.on('connection', async (ws: Socket, req) => {
 	// ? Check if authorized:
 	const url = new URL(req.url!, `http://${req.headers.host}`);
 	const token = url.searchParams.get('token');
+
+	const subscriber = createPostgresSubscriber(dbConfig);
+	const [client] = await Promise.all([pool.connect(), subscriber.connect()]);
 
 	// * Start Listening:
 	ws.on('message', async (data) => {
@@ -35,7 +37,7 @@ wss.on('connection', async (ws: Socket, req) => {
 			const is_authed = await authorized(token);
 			if (!is_authed) {
 				console.log('Unauthorized');
-				ws.close(1008, 'Not Unauthorized');
+				ws.emit('error', 'Unauthorized');
 				return;
 			}
 
@@ -43,8 +45,8 @@ wss.on('connection', async (ws: Socket, req) => {
 			const { table, condition, params = [] } = parseJson<InitData>(data, {});
 
 			// ? Check if table is valid:
-			if (table !== 'waitings' && table !== 'reservations') {
-				ws.close(1014, 'Invalid table name');
+			if (table !== 'waitings' && table !== 'reservations' && table !== 'waitings, reservations') {
+				ws.emit('error', 'Invalid table name');
 				return;
 			}
 
@@ -60,10 +62,8 @@ wss.on('connection', async (ws: Socket, req) => {
 						queryOptions.text += ` ${condition}`;
 					}
 					// ? Check if pool is not connected:
-					if (!pool.totalCount) {
-						await pool.connect();
-					}
-					const { rows } = await pool.query(queryOptions);
+					const { rows } = await client.query(queryOptions);
+					console.log('Sending data:', rows);
 					const newTickets = rows.map((row) => parseJson<Ticket>(row.data));
 					if (!oldTickets.length || detectChange(oldTickets, newTickets)) {
 						oldTickets = cloneDeep(newTickets);
@@ -73,17 +73,18 @@ wss.on('connection', async (ws: Socket, req) => {
 				} catch (error) {
 					console.log('Error in sendQueryData():', error.message);
 					ws.close(1011, 'Error in initial query: ' + error.message ?? 'Unknown error');
-					return;
 				}
 			};
 
 			const listener = async () => {
 				try {
 					// Check if subscriber is not connected:
-					if (!subscriber.getSubscribedChannels().length) {
-						await subscriber.connect();
+					if (table === 'waitings, reservations') {
+						subscriber.listenTo('waitings_realtime');
+						subscriber.listenTo('reservations_realtime');
+					} else {
+						subscriber.listenTo(table + '_realtime');
 					}
-					subscriber.listenTo(table + '_realtime');
 					subscriber.events.on('error', (error) => {
 						console.log('Error in listener even:', error.message);
 					});
@@ -93,9 +94,8 @@ wss.on('connection', async (ws: Socket, req) => {
 					});
 				} catch (error) {
 					console.log('Error in listener():', error.message);
-					ws.close(1011, '[Error @ listener()]: ' + error.message ?? 'Unknown error');
+					ws.emit('error', 'error.message');
 					subscriber.close();
-					return;
 				}
 			};
 
@@ -111,12 +111,8 @@ wss.on('connection', async (ws: Socket, req) => {
 
 	// * Close:
 	ws.on('close', () => {
-		try {
-			subscriber.close();
-			// ws.close(1000, 'WebSocket client disconnected');
-		} catch (error) {
-			console.log('Error in ws.on(close):', error.message);
-		}
+		subscriber.close();
+		client.release();
 	});
 });
 
